@@ -1,0 +1,141 @@
+---
+title: "forest_cover"
+output: html_document
+date: "2024-05-05"
+---
+
+```{r}
+# Install packages
+install.packages("httr")
+install.packages("jsonlite")
+install.packages("plotly")
+
+
+# Load packages
+library(httr)
+library(jsonlite)
+library(dplyr)
+library(plotly)
+
+# API endpoint URL
+api_url <- "https://opendatanepal.com/api/3/action/datastore_search?resource_id=66f78238-0409-4dba-aa6c-90fd760a9f4b&limit=75"
+
+# Send GET request to API endpoint
+response <- GET(api_url)
+
+# Check if the request was successful
+if (http_type(response) == "application/json") {
+  # Extract JSON content from response
+  json_content <- content(response, "text", encoding = "UTF-8")
+  
+  # Convert JSON data to a dataframe for forests
+  df_forest <- fromJSON(json_content)$result$records
+  
+  # Print the dataframe
+  print(df_forest)
+} else {
+  print("Error: Unable to fetch data from the API.")
+}
+```
+
+
+
+```{r}
+
+# Calculate forest cover percentage and round to one decimal place
+df_forest$Forest_Cover_Percentage <- round((df_forest$`Forest land` / df_forest$`Total Land`) * 100, 1)
+
+```
+
+
+```{r}
+#rename column to dist_name
+df_forest <- df_forest %>% 
+  rename(dist_name = District)
+
+```
+
+```{r}
+  
+df_forest <- df_forest %>% 
+mutate(dist_name = if_else(dist_name == "Udaypur", "Udayapur", dist_name),
+       dist_name = if_else(dist_name == "Terhathum", "Tehrathum", dist_name),
+       dist_name = if_else(dist_name == "Kavre", "Kavrepalanchok", dist_name),
+       dist_name = if_else(dist_name == "Makawanpur", "Makwanpur", dist_name),
+       dist_name = if_else(dist_name == "Dhanusha", "Dhanusa", dist_name)
+)
+```
+
+```{r}
+
+#Install all packages and load libraries required for mapping
+
+install.packages("cartography")
+install.packages("sf")
+install.packages("tidyverse")
+install.packages("ggthemes")
+
+library(cartography)
+library(sf)
+library(tidyverse)
+
+```
+
+```{r}
+
+#import shape file
+data<-st_read("shape_files_of_districts_in_nepal.shp")
+
+#combine forest cover data and shape files
+forest_data<-merge(data, df_forest, by="dist_name")
+View(forest_data)
+names(forest_data)
+
+#plot map with forest data
+plot(st_geometry(forest_data))
+choroLayer(x=forest_data, var="Forest_Cover_Percentage", method="quantile", nclass=8, legend.title.txt = "Forest Cover")
+layoutLayer(title="Forest Cover in Nepal by Districts", tabtitle = TRUE, frame=TRUE, scale=6)
+
+```
+
+
+```{r}
+library(ggthemes)
+library(ggplot2)
+
+# Create the ggplot2 plot
+p <- ggplot(data = forest_data) +
+  geom_sf(aes(fill = Forest_Cover_Percentage, text = paste("District: ", dist_name, "<br>Forest Cover: ", Forest_Cover_Percentage, "%")), color = "black", size = 0.1) +
+  scale_fill_gradient(low = "yellowgreen", high = "darkgreen") +
+  ggtitle("42% of land in Nepal covered by forests") +
+  labs(fill = "Forest Cover [%]", x = NULL, y = NULL) +  # Remove axis labels
+  theme(
+    plot.title = element_text(color = "black", size = 16, hjust = 0.5, face = "bold"),
+    plot.margin = margin(t = 10, r = 10, b = 50, l = 10)
+  )
+
+# Convert to plotly object
+fig <- ggplotly(p, tooltip = "text")
+
+# Add a source label
+fig <- fig %>% layout(
+  title = "42% of land in Nepal covered by forests",
+  annotations = list(
+    x = 1,
+    y = -0.1,
+    text = "Source: Department of Forest Research and Survey, 2023",
+    showarrow = FALSE,
+    xref = 'paper',
+    yref = 'paper',
+    xanchor = 'right',
+    yanchor = 'auto',
+    xshift = 0,
+    yshift = 0,
+    font = list(size = 12, color = "black")
+  ),
+  margin = list(b = 50)  # Adjust the bottom margin to make space for the source label
+)
+
+# Display the plot
+fig
+```
